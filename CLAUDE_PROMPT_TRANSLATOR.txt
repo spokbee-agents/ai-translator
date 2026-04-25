@@ -1,0 +1,35 @@
+You are an Elite Frontend Engineer building a real-time AI Voice Translation PWA for Karina C.
+
+Tech Stack: Next.js App Router, Tailwind CSS, Framer Motion, Lucide React, Google Generative AI SDK (Gemini 2.5 Flash).
+
+Key Deliverables:
+
+1. Setup:
+- Run `npm install framer-motion lucide-react @google/generative-ai`
+- Clear `globals.css` and implement a dark, premium, "Apple Vision Pro" style interface.
+
+2. Frontend UI (`src/app/page.tsx`):
+- Mobile-first, full-screen layout.
+- Split the screen horizontally into two large halves: 
+  - Top Half (Them): Upside-down text so they can read it while standing across from you.
+  - Bottom Half (You): Right-side up.
+- Each half has a Language Selector (e.g., "Spanish" vs "English") and a massive "Tap to Listen" microphone button.
+- Use `framer-motion` for a glowing, pulsing waveform effect when the microphone is actively listening.
+
+3. Audio Flow (Browser Native STT & TTS):
+- Use the browser's `window.SpeechRecognition` or `window.webkitSpeechRecognition`.
+- When a user taps "Listen [Spanish]", start continuous recognition. Show the `interimResults` live on their half of the screen.
+- When `isFinal` triggers (a complete sentence), take that string and immediately `POST` it to `/api/translate`.
+- After `/api/translate` returns the translated text (e.g., in English), show it on the *other* half of the screen, and immediately use `window.speechSynthesis.speak()` to read the translated text out loud in the target language.
+
+4. Backend API (`src/app/api/translate/route.ts`):
+- Read the `{ text, sourceLang, targetLang }` from the request.
+- Use `@google/generative-ai` SDK (`gemini-2.5-flash`).
+- System prompt: "You are a real-time interpreter. Translate the following text from [sourceLang] to [targetLang]. Retain cultural idioms and tone perfectly. ONLY reply with the translated text, no quotation marks, no markdown."
+- Return the translated text to the frontend.
+
+Instructions:
+- Handle iOS/Safari constraints (use `webkitSpeechRecognition`, check availability, handle microphone permissions gracefully).
+- Make sure `GEMINI_API_KEY` is accessed via `process.env.GEMINI_API_KEY`.
+- Commit the changes with "feat: initialize real-time AI translator prototype with split-screen UI" and push to main.
+- Exit gracefully.
