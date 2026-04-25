@@ -399,7 +399,13 @@ export default function Home() {
 
   // --- Toggle Listen ---
   const toggleListen = useCallback(
-    (side: "left" | "right") => {
+    async (side: "left" | "right") => {
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        alert("Please allow microphone permissions in your browser settings to use the translator.");
+        return;
+      }
       if (side === "left") {
         if (leftListening) {
           leftRecogRef.current?.abort();
