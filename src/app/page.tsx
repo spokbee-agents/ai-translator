@@ -325,7 +325,8 @@ export default function Home() {
 
       const recognition = new SR();
       recognition.lang = spokenLang;
-      recognition.continuous = true;
+      // iOS Safari breaks silently on continuous=true. Use walkie-talkie mode.
+      recognition.continuous = false;
       recognition.interimResults = true;
 
       recognition.onresult = async (event: SpeechRecognitionEvent) => {
@@ -381,14 +382,10 @@ export default function Home() {
       };
 
       recognition.onend = () => {
-        if (recogRef.current === recognition) {
-          try {
-            recognition.start();
-          } catch {
-            if (side === "left") setLeftListening(false);
-            else setRightListening(false);
-          }
-        }
+        // Walkie-talkie mode: auto turn off when they finish speaking
+        if (side === "left") setLeftListening(false);
+        else setRightListening(false);
+        recogRef.current = null;
       };
 
       recognition.start();
