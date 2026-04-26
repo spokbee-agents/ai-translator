@@ -233,6 +233,7 @@ export default function Home() {
   const [rightListening, setRightListening] = useState(false);
 
   const [sttSupported, setSttSupported] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const leftRecogRef = useRef<SpeechRecognition | null>(null);
   const rightRecogRef = useRef<SpeechRecognition | null>(null);
