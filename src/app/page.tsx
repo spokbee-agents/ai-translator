@@ -188,33 +188,41 @@ function ChatBubble({
   );
 }
 
-// --- Interim Bubble (live transcription) ---
+// --- Interim Bubble (live transcription + real-time translation) ---
 function InterimBubble({
   text,
-  side,
+  translatedText,
 }: {
   text: string;
-  side: "left" | "right";
+  translatedText: string;
 }) {
   if (!text) return null;
-  const isRight = side === "right";
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className={`flex ${isRight ? "justify-end" : "justify-start"} px-4`}
-    >
-      <div
-        className={`max-w-[80%] px-4 py-3 text-[15px] leading-relaxed italic text-white/40 ${
-          isRight
-            ? "bg-[var(--bubble-user)]/40 rounded-[20px] rounded-br-md"
-            : "bg-white/[0.04] rounded-[20px] rounded-bl-md border border-white/[0.04]"
-        }`}
+    <>
+      {/* Source language interim (user side) */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex justify-end px-4"
       >
-        {text}
-      </div>
-    </motion.div>
+        <div className="max-w-[80%] px-4 py-3 text-[15px] leading-relaxed italic text-white/40 bg-[var(--bubble-user)]/40 rounded-[20px] rounded-br-md">
+          {text}
+        </div>
+      </motion.div>
+      {/* Translated interim (AI side) */}
+      {translatedText && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex justify-start px-4"
+        >
+          <div className="max-w-[80%] px-4 py-3 text-[15px] leading-relaxed italic text-white/50 bg-white/[0.04] rounded-[20px] rounded-bl-md border border-white/[0.04]">
+            {translatedText}
+          </div>
+        </motion.div>
+      )}
+    </>
   );
 }
 
@@ -228,6 +236,8 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [leftInterim, setLeftInterim] = useState("");
   const [rightInterim, setRightInterim] = useState("");
+  const [leftInterimTranslation, setLeftInterimTranslation] = useState("");
+  const [rightInterimTranslation, setRightInterimTranslation] = useState("");
 
   const [leftListening, setLeftListening] = useState(false);
   const [rightListening, setRightListening] = useState(false);
@@ -239,6 +249,8 @@ export default function Home() {
   const rightRecogRef = useRef<SpeechRecognition | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const msgIdRef = useRef(0);
+  const interimDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const interimAbortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
@@ -265,7 +277,7 @@ export default function Home() {
         behavior: "smooth",
       });
     }
-  }, [messages, leftInterim, rightInterim]);
+  }, [messages, leftInterim, rightInterim, leftInterimTranslation, rightInterimTranslation]);
 
   const nextId = () => {
     msgIdRef.current += 1;
@@ -290,6 +302,54 @@ export default function Home() {
       } catch {
         return null;
       }
+    },
+    []
+  );
+
+  // --- Debounced Interim Translation ---
+  const translateInterim = useCallback(
+    (
+      text: string,
+      sourceLang: string,
+      targetLang: string,
+      setInterimTranslation: React.Dispatch<React.SetStateAction<string>>
+    ) => {
+      // Cancel any pending debounce
+      if (interimDebounceRef.current) {
+        clearTimeout(interimDebounceRef.current);
+      }
+      // Abort any in-flight interim translation request
+      if (interimAbortRef.current) {
+        interimAbortRef.current.abort();
+      }
+
+      if (!text.trim()) {
+        setInterimTranslation("");
+        return;
+      }
+
+      interimDebounceRef.current = setTimeout(async () => {
+        const controller = new AbortController();
+        interimAbortRef.current = controller;
+        try {
+          const res = await fetch("/api/translate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text,
+              sourceLang: getLangName(sourceLang),
+              targetLang: getLangName(targetLang),
+            }),
+            signal: controller.signal,
+          });
+          const data = await res.json();
+          if (data.translatedText) {
+            setInterimTranslation(data.translatedText);
+          }
+        } catch {
+          // Aborted or failed — ignore
+        }
+      }, 300);
     },
     []
   );
@@ -322,6 +382,7 @@ export default function Home() {
       spokenLang: string,
       targetLang: string,
       setInterim: React.Dispatch<React.SetStateAction<string>>,
+      setInterimTranslation: React.Dispatch<React.SetStateAction<string>>,
       recogRef: React.RefObject<SpeechRecognition | null>
     ) => {
       // We MUST cast any because window.SpeechRecognition doesn't exist on default Window types
@@ -364,8 +425,21 @@ export default function Home() {
 
         setInterim(interim);
 
+        // Debounced real-time translation of interim text
+        if (interim) {
+          translateInterim(interim, spokenLang, targetLang, setInterimTranslation);
+        }
+
         if (finalText) {
           setInterim("");
+          setInterimTranslation("");
+          // Cancel any pending interim translation
+          if (interimDebounceRef.current) {
+            clearTimeout(interimDebounceRef.current);
+          }
+          if (interimAbortRef.current) {
+            interimAbortRef.current.abort();
+          }
 
           // Add user message
           const userMsg: Message = {
@@ -421,7 +495,7 @@ export default function Home() {
         else setRightListening(false);
       }
     },
-    [translate, speak]
+    [translate, speak, translateInterim]
   );
 
   // --- Toggle Listen ---
@@ -439,6 +513,7 @@ export default function Home() {
           leftRecogRef.current = null;
           setLeftListening(false);
           setLeftInterim("");
+          setLeftInterimTranslation("");
         } else {
           // Stop the other side if active
           if (rightListening) {
@@ -446,6 +521,7 @@ export default function Home() {
             rightRecogRef.current = null;
             setRightListening(false);
             setRightInterim("");
+            setRightInterimTranslation("");
           }
           setLeftListening(true);
           startRecognition(
@@ -453,6 +529,7 @@ export default function Home() {
             leftLang,
             rightLang,
             setLeftInterim,
+            setLeftInterimTranslation,
             leftRecogRef
           );
         }
@@ -462,12 +539,14 @@ export default function Home() {
           rightRecogRef.current = null;
           setRightListening(false);
           setRightInterim("");
+          setRightInterimTranslation("");
         } else {
           if (leftListening) {
             leftRecogRef.current?.abort();
             leftRecogRef.current = null;
             setLeftListening(false);
             setLeftInterim("");
+            setLeftInterimTranslation("");
           }
           setRightListening(true);
           startRecognition(
@@ -475,6 +554,7 @@ export default function Home() {
             rightLang,
             leftLang,
             setRightInterim,
+            setRightInterimTranslation,
             rightRecogRef
           );
         }
@@ -488,6 +568,8 @@ export default function Home() {
     return () => {
       leftRecogRef.current?.abort();
       rightRecogRef.current?.abort();
+      if (interimDebounceRef.current) clearTimeout(interimDebounceRef.current);
+      if (interimAbortRef.current) interimAbortRef.current.abort();
     };
   }, []);
 
@@ -535,9 +617,9 @@ export default function Home() {
           <ChatBubble key={msg.id} message={msg} onSpeak={speak} />
         ))}
 
-        {/* Live interim text */}
-        <InterimBubble text={leftInterim} side="right" />
-        <InterimBubble text={rightInterim} side="right" />
+        {/* Live interim text with real-time translation */}
+        <InterimBubble text={leftInterim} translatedText={leftInterimTranslation} />
+        <InterimBubble text={rightInterim} translatedText={rightInterimTranslation} />
       </div>
 
       {/* ============ CONTROL DOCK ============ */}
