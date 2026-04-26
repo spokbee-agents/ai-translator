@@ -239,6 +239,14 @@ export default function Home() {
   const feedRef = useRef<HTMLDivElement | null>(null);
   const msgIdRef = useRef(0);
 
+    useEffect(() => {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    if (isIOS && !isSafari) {
+      setError("Apple blocks voice translation in this browser. Please open this app in Safari to use the microphone.");
+    }
+  }, []);
+
   // Check STT support
   useEffect(() => {
     const SR =
