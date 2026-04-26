@@ -315,8 +315,19 @@ export default function Home() {
       setInterim: React.Dispatch<React.SetStateAction<string>>,
       recogRef: React.RefObject<SpeechRecognition | null>
     ) => {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) return;
+      // We MUST cast any because window.SpeechRecognition doesn't exist on default Window types
+      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SR) {
+        alert("Speech Recognition is not supported on this browser.");
+        return;
+      }
+      
+      // Failsafe: Ask for mic perms synchronously without awaiting.
+      // This forces the prompt on iOS if it hasn't happened yet, while letting the engine start.
+      try {
+        navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => {});
+      } catch(e) {}
+      
 
       if (recogRef.current) {
         recogRef.current.abort();
@@ -388,8 +399,18 @@ export default function Home() {
         recogRef.current = null;
       };
 
-      recognition.start();
-      recogRef.current = recognition;
+      try {
+        recognition.start();
+        recogRef.current = recognition;
+      } catch (err: any) {
+        console.error("Speech start error:", err);
+        if (err.name === 'NotAllowedError') {
+          alert("Microphone access is blocked. Please enable it in your browser settings (Safari -> Settings -> Websites -> Microphone).");
+        }
+        setInterim("Error starting microphone. See alert.");
+        if (side === "left") setLeftListening(false);
+        else setRightListening(false);
+      }
     },
     [translate, speak]
   );
